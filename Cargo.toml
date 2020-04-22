@@ -1,0 +1,16 @@
+[package]
+name = "tls"
+version = "0.1.0"
+authors = ["Frederik Deweerdt <fdeweerdt@fastly.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hyper = "*"
+tokio-tls = "*"
+tokio-macros = "*"
+native-tls = "*"
+tokio = { version = "*", features = ["macros", "rt-threaded"] }
+lazy_static = "1.4.0"
+futures = "*"
