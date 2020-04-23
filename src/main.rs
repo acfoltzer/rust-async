@@ -70,15 +70,17 @@ impl Connection for UpstreamConnectorTransport {
 
 #[derive(Debug, Clone)]
 pub struct UpstreamTlsConnector<'a> {
-    pub socket_addr: &'a SocketAddr,
-    tls_cx: &'a tokio_tls::TlsConnector,
+    pub socket_addr: SocketAddr,
+    tls_cx: tokio_tls::TlsConnector,
+    phantom: std::marker::PhantomData<&'a Self>,
 }
 
 impl<'a> UpstreamTlsConnector<'a> {
-    pub fn new(socket_addr: &'a SocketAddr, tls_cx: &'a tokio_tls::TlsConnector) -> Self {
+    pub fn new(socket_addr: SocketAddr, tls_cx: tokio_tls::TlsConnector) -> Self {
         UpstreamTlsConnector {
             socket_addr,
             tls_cx,
+            phantom: std::marker::PhantomData,
         }
     }
 }
@@ -86,6 +88,12 @@ impl<'a> UpstreamTlsConnector<'a> {
 lazy_static! {
     static ref TLS_CONNECTOR: tokio_tls::TlsConnector =
         tokio_tls::TlsConnector::from(native_tls::TlsConnector::builder().build().unwrap());
+}
+
+impl<'a> UpstreamTlsConnector<'a> {
+    fn gimme(&'a self) -> &'a tokio_tls::TlsConnector {
+        &self.tls_cx
+    }
 }
 
 impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
@@ -99,15 +107,25 @@ impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
     }
 
     fn call(&mut self, _uri: Uri) -> Self::Future {
+        fn handler<'a, S>(
+            stream: S,
+            tls_cx: &'a tokio_tls::TlsConnector,
+        ) -> Pin<Box<dyn Future<Output = Result<TlsStream<S>, std::io::Error>> + Send + 'a>>
+        where
+            S: AsyncRead + AsyncWrite + std::marker::Unpin + Send + 'a,
+        {
+            static DOMAIN: &str = "example.org";
+            Box::pin(
+                tls_cx
+                    .connect(&DOMAIN, stream)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+            )
+        }
+
         Box::pin(
             TcpStream::connect(self.socket_addr)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                .and_then(move |stream| {
-                    static DOMAIN: &str = "example.org";
-                    self.tls_cx
-                            .connect(&DOMAIN, stream)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                }),
+                .and_then(move |stream| handler(stream, self.gimme())),
         )
     }
 }
@@ -118,7 +136,10 @@ pub enum UpstreamConnector<'a> {
 
 impl<'a> UpstreamConnector<'a> {
     pub fn new(socket_addr: &'a SocketAddr, tls_cx: &'a tokio_tls::TlsConnector) -> Self {
-        UpstreamConnector::Tls(UpstreamTlsConnector::new(socket_addr, tls_cx))
+        UpstreamConnector::Tls(UpstreamTlsConnector::new(
+            socket_addr.clone(),
+            tls_cx.clone(),
+        ))
     }
 }
 
@@ -128,7 +149,11 @@ impl<'a> Clone for UpstreamConnector<'a> {
             UpstreamConnector::Tls(UpstreamTlsConnector {
                 socket_addr,
                 tls_cx,
-            }) => UpstreamConnector::Tls(UpstreamTlsConnector::new(*socket_addr, *tls_cx)),
+                phantom: std::marker::PhantomData,
+            }) => UpstreamConnector::Tls(UpstreamTlsConnector::new(
+                socket_addr.clone(),
+                tls_cx.clone(),
+            )),
         }
     }
 }
@@ -165,7 +190,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .next()
         .ok_or("failed to resolve address")?;
 
-    let connector = UpstreamConnector::Tls(UpstreamTlsConnector::new(&addr, &tls_cx));
+    let connector = UpstreamConnector::Tls(UpstreamTlsConnector::new(addr, tls_cx));
     let client: Client<_, Body> = Client::builder().build(connector.clone());
 
     let res = client
