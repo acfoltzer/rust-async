@@ -69,18 +69,20 @@ impl Connection for UpstreamConnectorTransport {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpstreamTlsConnector<'a> {
+pub struct UpstreamTlsConnector<'a: 'b, 'b> {
     pub socket_addr: SocketAddr,
     tls_cx: tokio_tls::TlsConnector,
-    phantom: std::marker::PhantomData<&'a Self>,
+    phantom1: std::marker::PhantomData<&'a Self>,
+    phantom2: std::marker::PhantomData<&'b Self>,
 }
 
-impl<'a> UpstreamTlsConnector<'a> {
+impl<'a: 'b, 'b> UpstreamTlsConnector<'a, 'b> {
     pub fn new(socket_addr: SocketAddr, tls_cx: tokio_tls::TlsConnector) -> Self {
         UpstreamTlsConnector {
             socket_addr,
             tls_cx,
-            phantom: std::marker::PhantomData,
+            phantom1: std::marker::PhantomData,
+            phantom2: std::marker::PhantomData,
         }
     }
 }
@@ -90,27 +92,27 @@ lazy_static! {
         tokio_tls::TlsConnector::from(native_tls::TlsConnector::builder().build().unwrap());
 }
 
-impl<'a> UpstreamTlsConnector<'a> {
+impl<'a: 'b, 'b> UpstreamTlsConnector<'a, 'b> {
     fn gimme(&'a self) -> &'a tokio_tls::TlsConnector {
         &self.tls_cx
     }
 }
 
-impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
+impl<'a: 'b, 'b> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a, 'b> {
     type Response = TlsStream<TcpStream>;
     type Error = std::io::Error;
 
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'b>>;
 
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _uri: Uri) -> Self::Future {
-        fn handler<'a, S>(
+    fn call<'c>(&mut self, _uri: Uri) -> Self::Future {
+        fn handler<'a: 'b, 'b, S>(
             stream: S,
             tls_cx: &'a tokio_tls::TlsConnector,
-        ) -> Pin<Box<dyn Future<Output = Result<TlsStream<S>, std::io::Error>> + Send + 'a>>
+        ) -> Pin<Box<dyn Future<Output = Result<TlsStream<S>, std::io::Error>> + Send + 'b>>
         where
             S: AsyncRead + AsyncWrite + std::marker::Unpin + Send + 'a,
         {
@@ -130,11 +132,11 @@ impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
     }
 }
 
-pub enum UpstreamConnector<'a> {
-    Tls(UpstreamTlsConnector<'a>),
+pub enum UpstreamConnector<'a: 'b, 'b> {
+    Tls(UpstreamTlsConnector<'a, 'b>),
 }
 
-impl<'a> UpstreamConnector<'a> {
+impl<'a: 'b, 'b> UpstreamConnector<'a, 'b> {
     pub fn new(socket_addr: &'a SocketAddr, tls_cx: &'a tokio_tls::TlsConnector) -> Self {
         UpstreamConnector::Tls(UpstreamTlsConnector::new(
             socket_addr.clone(),
@@ -143,13 +145,14 @@ impl<'a> UpstreamConnector<'a> {
     }
 }
 
-impl<'a> Clone for UpstreamConnector<'a> {
+impl<'a: 'b, 'b> Clone for UpstreamConnector<'a, 'b> {
     fn clone(&self) -> Self {
         match self {
             UpstreamConnector::Tls(UpstreamTlsConnector {
                 socket_addr,
                 tls_cx,
-                phantom: std::marker::PhantomData,
+                phantom1: std::marker::PhantomData,
+                phantom2: std::marker::PhantomData,
             }) => UpstreamConnector::Tls(UpstreamTlsConnector::new(
                 socket_addr.clone(),
                 tls_cx.clone(),
@@ -158,7 +161,7 @@ impl<'a> Clone for UpstreamConnector<'a> {
     }
 }
 
-impl<'a> hyper::service::Service<Uri> for UpstreamConnector<'a> {
+impl<'a: 'b, 'b> hyper::service::Service<Uri> for UpstreamConnector<'a, 'b> {
     type Response = UpstreamConnectorTransport;
     type Error = std::io::Error;
 
