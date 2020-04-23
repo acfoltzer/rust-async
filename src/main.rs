@@ -105,50 +105,7 @@ impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
                 .and_then(move |stream| {
                     static DOMAIN: &str = "example.org";
                     self.tls_cx
-                        /*
-                           Compiling tls v0.1.0 (/home/def/p/proglets/minimal-rust/tls)
-                        error[E0495]: cannot infer an appropriate lifetime for autoref due to conflicting requirements
-                           --> src/main.rs:111:26
-                            |
-                        111 |                         .connect(&DOMAIN, stream)
-                            |                          ^^^^^^^
-                            |
-                        note: first, the lifetime cannot outlive the anonymous lifetime #1 defined on the method body at 103:5...
-                           --> src/main.rs:103:5
-                            |
-                        103 | /     fn call(&mut self, _uri: Uri) -> Self::Future {
-                        104 | |         Box::pin(
-                        105 | |             TcpStream::connect(self.socket_addr)
-                        106 | |                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                        ...   |
-                        114 | |         )
-                        115 | |     }
-                            | |_____^
-                        note: ...so that reference does not outlive borrowed content
-                           --> src/main.rs:109:21
-                            |
-                        109 |                     self.tls_cx
-                            |                     ^^^^^^^^^^^
-                            = note: but, the lifetime must be valid for the static lifetime...
-                        note: ...so that the expression is assignable
-                           --> src/main.rs:104:9
-                            |
-                        104 | /         Box::pin(
-                        105 | |             TcpStream::connect(self.socket_addr)
-                        106 | |                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                        107 | |                 .and_then(move |stream| {
-                        ...   |
-                        113 | |                 }),
-                        114 | |         )
-                            | |_________^
-                            = note: expected  `std::pin::Pin<std::boxed::Box<(dyn core::future::future::Future<Output = std::result::Result<tokio_tls::TlsStream<tokio::net::tcp::stream::TcpStream>, std::io::Error>> + std::marker::Send + 'static)>>`
-                                       found  `std::pin::Pin<std::boxed::Box<dyn core::future::future::Future<Output = std::result::Result<tokio_tls::TlsStream<tokio::net::tcp::stream::TcpStream>, std::io::Error>> + std::marker::Send>>`
-                        error: aborting due to previous error
-                        For more information about this error, try `rustc --explain E0495`.
-                        error: could not compile `tls`.
-                        To learn more, run the command again with --verbose.
-                                                */
-                        .connect(&DOMAIN, stream)
+                            .connect(&DOMAIN, stream)
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
                 }),
         )
