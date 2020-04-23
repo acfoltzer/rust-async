@@ -71,13 +71,13 @@ impl Connection for UpstreamConnectorTransport {
 
 
 #[derive(Debug, Clone)]
-pub struct UpstreamTlsConnector {
-    pub socket_addr: SocketAddr,
-    tls_cx: tokio_tls::TlsConnector,
+pub struct UpstreamTlsConnector<'a> {
+    pub socket_addr: &'a SocketAddr,
+    tls_cx: &'a tokio_tls::TlsConnector,
 }
 
-impl UpstreamTlsConnector {
-    pub fn new(socket_addr: SocketAddr, tls_cx: tokio_tls::TlsConnector) -> Self {
+impl<'a> UpstreamTlsConnector<'a> {
+    pub fn new(socket_addr: &'a SocketAddr, tls_cx: &'a tokio_tls::TlsConnector) -> Self {
         UpstreamTlsConnector {
             socket_addr,
             tls_cx,
@@ -90,11 +90,11 @@ lazy_static! {
                     tokio_tls::TlsConnector::from(native_tls::TlsConnector::builder().build().unwrap());
 }
 
-impl hyper::service::Service<hyper::Uri> for UpstreamTlsConnector {
+impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
     type Response = TlsStream<TcpStream>;
     type Error = std::io::Error;
 
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a >>;
 
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -106,9 +106,8 @@ impl hyper::service::Service<hyper::Uri> for UpstreamTlsConnector {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
                 .and_then(move |stream| {
                     static DOMAIN: &str = "example.org";
-                    TLS_CONNECTOR
-                        /*
                     self.tls_cx
+                        /*
    Compiling tls v0.1.0 (/home/def/p/proglets/minimal-rust/tls)
 error[E0495]: cannot infer an appropriate lifetime for autoref due to conflicting requirements
    --> src/main.rs:111:26
@@ -161,33 +160,33 @@ To learn more, run the command again with --verbose.
     }
 }
 
-pub enum UpstreamConnector {
-    Tls(UpstreamTlsConnector),
+pub enum UpstreamConnector<'a> {
+    Tls(UpstreamTlsConnector<'a>),
 }
 
-impl UpstreamConnector {
-    pub fn new(socket_addr: SocketAddr, tls_cx: tokio_tls::TlsConnector) -> Self {
+impl<'a> UpstreamConnector<'a> {
+    pub fn new(socket_addr: &'a SocketAddr, tls_cx: &'a tokio_tls::TlsConnector) -> Self {
         UpstreamConnector::Tls(UpstreamTlsConnector::new(socket_addr, tls_cx))
     }
 }
 
-impl Clone for UpstreamConnector {
+impl<'a> Clone for UpstreamConnector<'a> {
     fn clone(&self) -> Self {
         match self {
             UpstreamConnector::Tls(UpstreamTlsConnector {
                 socket_addr,
                 tls_cx,
-            }) => UpstreamConnector::Tls(UpstreamTlsConnector::new(*socket_addr, tls_cx.clone())),
+            }) => UpstreamConnector::Tls(UpstreamTlsConnector::new(*socket_addr, *tls_cx)),
         }
     }
 }
 
 
-impl hyper::service::Service<Uri> for UpstreamConnector {
+impl<'a> hyper::service::Service<Uri> for UpstreamConnector<'a> {
     type Response = UpstreamConnectorTransport;
     type Error = std::io::Error;
 
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a >>;
 
     fn poll_ready(&mut self, context: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
@@ -215,7 +214,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .next()
         .ok_or("failed to resolve address")?;
 
-    let connector = UpstreamConnector::Tls(UpstreamTlsConnector::new(addr, tls_cx));
+    let connector = UpstreamConnector::Tls(UpstreamTlsConnector::new(&addr, &tls_cx));
     let client: Client<_, Body> = Client::builder().build(connector.clone());
 
     let res = client.get(Uri::from_static("https://httpbin.org/ip")).await?;
