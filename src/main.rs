@@ -124,10 +124,12 @@ impl<'a: 'b, 'b> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a
             )
         }
 
+        let self2: &'b Self = self;
+
         Box::pin(
             TcpStream::connect(self.socket_addr)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                .and_then(move |stream| handler(stream, self.gimme())),
+                .and_then(move |stream| handler(stream, self2.gimme())),
         )
     }
 }
