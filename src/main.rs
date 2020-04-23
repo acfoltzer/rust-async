@@ -92,23 +92,26 @@ impl<'a> hyper::service::Service<hyper::Uri> for UpstreamTlsConnector<'a> {
     type Response = TlsStream<TcpStream>;
     type Error = std::io::Error;
 
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, _uri: Uri) -> Self::Future {
-        Box::pin(
-            TcpStream::connect(self.socket_addr)
+        let a = self.socket_addr.clone();
+        let cx = self.tls_cx.clone();
+        Box::pin(async move {
+            TcpStream::connect(a)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
                 .and_then(move |stream| {
                     static DOMAIN: &str = "example.org";
-                    self.tls_cx
-                            .connect(&DOMAIN, stream)
+                    cx.connect(&DOMAIN, stream)
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                }),
-        )
+                })
+                .await
+        })
     }
 }
 
