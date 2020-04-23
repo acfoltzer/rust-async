@@ -103,15 +103,14 @@ impl hyper::service::Service<hyper::Uri> for UpstreamTlsConnector {
         let a = self.socket_addr.clone();
         let cx = self.tls_cx.clone();
         Box::pin(async move {
-            let cx_inner = cx.clone();
-            let stream = TcpStream::connect(a)
-                .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            const DOMAIN: &str = "example.org";
-            cx_inner
-                .connect(&DOMAIN, stream)
+            TcpStream::connect(a)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                .await
+                .and_then(move |stream| async move {
+                    const DOMAIN: &str = "example.org";
+                    cx.connect(&DOMAIN, stream)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                        .await
+                }).await
         })
     }
 }
